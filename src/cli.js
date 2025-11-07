@@ -123,7 +123,54 @@ yargs(hideBin(process.argv))
     process.exit(0);
   }
 )
+  .command(
+    "Update <config>",
+    "changes the backoff and max retries values"
+    
+  )
 
+  // ---------- CONFIG ----------
+  .command(
+    "config <action> [key] [value]",
+    "Get or set config values",
+    (y) =>
+      y.positional("action", {
+        choices: ["get", "set"],
+        describe: "Get or set config value",
+      })
+      .positional("key", {
+        type: "string",
+        describe: "Config key (e.g. backoff_base, max_retries)",
+      })
+      .positional("value", {
+        type: "string",
+        describe: "Value to set (for set only)",
+      }),
+    (argv) => {
+      const config = require("./config");
+      if (argv.action === "get") {
+        if (!argv.key) {
+          console.error("Please provide a config key to get.");
+          process.exit(1);
+        }
+        const val = config.getConfig(argv.key);
+        if (val === undefined || val === null) {
+          console.log(`Config '${argv.key}' not set.`);
+        } else {
+          console.log(`${argv.key} = ${val}`);
+        }
+        process.exit(0);
+      } else if (argv.action === "set") {
+        if (!argv.key || argv.value === undefined) {
+          console.error("Please provide both key and value to set.");
+          process.exit(1);
+        }
+        config.setConfig(argv.key, argv.value);
+        console.log(`Config '${argv.key}' set to '${argv.value}'.`);
+        process.exit(0);
+      }
+    }
+  )
 
   .demandCommand(1, "Please provide a valid command.")
   .help()

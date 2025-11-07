@@ -1,9 +1,11 @@
+const { UPDATE } = require('sequelize/lib/query-types');
 const db = require('./db');
 
 function setConfig(key, value) {
   const stmt = db.prepare(`INSERT INTO config(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`);
   stmt.run(key, String(value));
 }
+
 
 function getConfig(key, fallback=null) {
   const row = db.prepare(`SELECT value FROM config WHERE key = ?`).get(key);
