@@ -15,5 +15,6 @@ function getConfig(key, fallback=null) {
 // default values
 if (getConfig('max_retries') === null) setConfig('max_retries', '3');
 if (getConfig('backoff_base') === null) setConfig('backoff_base', '2');
+if (getConfig('job_timeout') === null) setConfig('job_timeout', '300'); // 5 minutes default timeout
 
 module.exports = { setConfig, getConfig };

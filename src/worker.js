@@ -38,9 +38,29 @@ class Worker {
       const env = Object.assign({}, process.env, { ATTEMPT: String(job.attempts) });
       const proc = spawn(process.platform === 'win32' ? 'cmd.exe' : '/bin/sh',
         [process.platform === 'win32' ? '/c' : '-c', job.command],
-        { stdio: 'inherit', env });
+        { stdio: 'ignore', env, detached: true });
+      
+      // Set up job timeout
+      const timeoutSeconds = parseInt(config.getConfig('job_timeout', '300'));
+      const timeoutHandle = setTimeout(() => {
+        console.log(`[worker ${this.id}] job ${job.id} timed out after ${timeoutSeconds}s ⏰`);
+        if (process.platform === 'win32') {
+          spawn("taskkill", ["/pid", proc.pid, '/f', '/t']);
+        } else {
+          proc.kill('SIGTERM');
+          // If the process doesn't exit within 5 seconds, force kill it
+          setTimeout(() => {
+            try {
+              proc.kill('SIGKILL');
+            } catch (e) {
+              // Process may already be gone
+            }
+          }, 5000);
+        }
+      }, timeoutSeconds * 1000);
 
       proc.on('exit', (code, signal) => {
+        clearTimeout(timeoutHandle);
         const attempts = job.attempts + 1;
         const max_retries = job.max_retries;
         const backoffBase = parseFloat(config.getConfig('backoff_base') || '2');
@@ -50,16 +70,19 @@ class Worker {
           queue.markJobCompleted(job.id);
         } else {
           const backoffSeconds = Math.pow(backoffBase, attempts);
-          const errMsg = `exit=${code} signal=${signal}`;
+          const errMsg = signal === 'SIGTERM' ? 'timeout' : `exit=${code} signal=${signal}`;
 
-          // 👇 Main fix here
+          if (signal === 'SIGTERM') {
+            console.log(`[worker ${this.id}] job ${job.id} failed due to timeout`);
+          }
+
           if (attempts > max_retries) {
             console.log(
               `[worker ${this.id}] job ${job.id} exceeded max retries (${max_retries}). Moved to DLQ ❌`
             );
           } else {
             console.log(
-              `[worker ${this.id}] job ${job.id} failed (code ${code}). attempt ${attempts}/${max_retries}. next in ${backoffSeconds}s`
+              `[worker ${this.id}] job ${job.id} failed (${errMsg}). attempt ${attempts}/${max_retries}. next in ${backoffSeconds}s`
             );
           }
 
