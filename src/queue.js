@@ -56,12 +56,14 @@ function markJobCompleted(id) {
 function markJobFailed(id, errMsg, attempts, max_retries, backoffSeconds) {
   const now = nowIso();
   if (attempts >= max_retries) {
-    // move to dead
-    const stmt = db.prepare(`UPDATE jobs SET state='dead', last_error=?, updated_at=?, worker_id=NULL WHERE id=?`);
-    stmt.run(errMsg, now, id);
+    // final failure → move to dead (DLQ)
+    console.log(`[queue] job ${id} exceeded max retries and moved to DLQ`);
+    const stmt = db.prepare(`UPDATE jobs SET state='dead', last_error=?, attempts=?, updated_at=?, worker_id=NULL WHERE id=?`);
+    stmt.run(errMsg, attempts, now, id);
   } else {
-    // mark as failed (retryable) and schedule next run
+    // retryable failure — schedule next run
     const nextRun = new Date(Date.now() + backoffSeconds*1000).toISOString();
+    console.log(`[queue] job ${id} will retry in ${backoffSeconds}s`);
     const stmt = db.prepare(`UPDATE jobs SET state='failed', last_error=?, attempts=?, next_run_at=?, updated_at=?, worker_id=NULL WHERE id=?`);
     stmt.run(errMsg, attempts, nextRun, now, id);
   }
@@ -85,7 +87,28 @@ function listAllJobs() {
   return stmt.all();
 }
 
+function markJobDead(jobId, error, attempts) {
+  const stmt = db.prepare(`
+    UPDATE jobs
+    SET state = 'dead',
+        error = ?,
+        attempts = ?
+    WHERE id = ?
+  `);
+  stmt.run(error, attempts, jobId);
+
+  // Optionally insert into DLQ table
+  const dlqStmt = db.prepare(`
+    INSERT INTO dlq (job_id, error, moved_at)
+    VALUES (?, ?, datetime('now'))
+  `);
+  dlqStmt.run(jobId, error);
+
+  console.log(`[queue] job ${jobId} saved to DLQ`);
+}
+
+
 module.exports = {
   enqueue, getStatusSummary, listJobs, fetchNextJobForProcessing,
-  markJobCompleted, markJobFailed, moveDlqRetry, deleteJob,listDeadJobs,listAllJobs
+  markJobCompleted, markJobFailed, moveDlqRetry, deleteJob,listDeadJobs,listAllJobs,markJobDead
 };

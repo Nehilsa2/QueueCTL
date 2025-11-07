@@ -51,11 +51,24 @@ class Worker {
         } else {
           const backoffSeconds = Math.pow(backoffBase, attempts);
           const errMsg = `exit=${code} signal=${signal}`;
-          console.log(`[worker ${this.id}] job ${job.id} failed (code ${code}). attempt ${attempts}/${max_retries}. next in ${backoffSeconds}s`);
+
+          // 👇 Main fix here
+          if (attempts > max_retries) {
+            console.log(
+              `[worker ${this.id}] job ${job.id} exceeded max retries (${max_retries}). Moved to DLQ ❌`
+            );
+          } else {
+            console.log(
+              `[worker ${this.id}] job ${job.id} failed (code ${code}). attempt ${attempts}/${max_retries}. next in ${backoffSeconds}s`
+            );
+          }
+
           queue.markJobFailed(job.id, errMsg, attempts, max_retries, backoffSeconds);
         }
+
         resolve();
       });
+
 
       proc.on('error', (err) => {
         const attempts = job.attempts + 1;
@@ -86,13 +99,13 @@ class WorkerManager {
     this.shutdownRequested = false;
   }
 
-  start(count=1) {
+  start(count = 1) {
     // Reset any stuck processing jobs to pending state
     const db = require('./db');
     db.prepare(`UPDATE jobs SET state='pending', worker_id=NULL WHERE state='processing'`).run();
-    
+
     for (let i = 0; i < count; i++) {
-      const wid = `worker-${Date.now()}-${Math.floor(Math.random()*10000)}-${i}`;
+      const wid = `worker-${Date.now()}-${Math.floor(Math.random() * 10000)}-${i}`;
       const w = new Worker(wid, () => this.shutdownRequested);
       this.workers.set(wid, w);
       w.runLoop();
