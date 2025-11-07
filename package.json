@@ -1,0 +1,25 @@
+{
+  "name": "queuectl",
+  "version": "0.1.0",
+  "main": "src/cli.js",
+  "bin": {
+    "queuectl": "src/cli.js"
+  },
+  "scripts": {
+    "start": "node src/cli.js",
+    "demo": "bash scripts/demo.sh"
+  },
+  "dependencies": {
+    "better-sqlite3": "^8.7.0",
+    "globally": "^0.0.0",
+    "uuid": "^9.0.1",
+    "yargs": "^17.7.2"
+  },
+  "engines": {
+    "node": ">=14"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": ""
+}
