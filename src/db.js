@@ -41,6 +41,20 @@ CREATE TABLE IF NOT EXISTS job_logs (
   created_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
 );
+
+
+CREATE TABLE IF NOT EXISTS job_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT,
+    command TEXT,
+    state TEXT,
+    duration REAL,
+    completed_at TEXT DEFAULT (datetime('now'))
+  );
 `);
+
+
+  
+
 
 export default db;
