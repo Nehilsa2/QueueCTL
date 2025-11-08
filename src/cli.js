@@ -18,7 +18,7 @@ function getStateColor(state) {
   }
 }
 
-import yargs from 'yargs/yargs';
+import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import * as queue from './queue.js';
 import { WorkerManager } from './worker.js';
