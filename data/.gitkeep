@@ -1,0 +1,3 @@
+# This file ensures the data directory exists in Git
+# but its contents (database files) are ignored.
+# See ../../.gitignore for ignore patterns.
