@@ -1,9 +1,5 @@
 #!/usr/bin/env node
 import chalk from "chalk";
-import figlet from "figlet";
-import gradient from "gradient-string";
-import boxen from "boxen";
-import ora from "ora";
 import Table from "cli-table3";
 
 import db from './db.js'
