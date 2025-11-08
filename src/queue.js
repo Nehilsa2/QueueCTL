@@ -182,6 +182,27 @@ function markJobDead(jobId, error, attempts) {
   console.log(`[queue] job ${jobId} saved to DLQ`);
 }
 
+
+// Append a log line to job_logs (safe if table missing)
+function addJobLog(jobId, message) {
+  try {
+    const stmt = db.prepare(`INSERT INTO job_logs (job_id, log_output, created_at) VALUES (?, ?, ?)`);
+    stmt.run(jobId, message, nowIso());
+  } catch (e) {
+    // ignore if table missing or any other DB error
+  }
+}
+
+// Retrieve logs for a job
+function getJobLogs(jobId) {
+  try {
+    const stmt = db.prepare(`SELECT * FROM job_logs WHERE job_id = ? ORDER BY created_at ASC`);
+    return stmt.all(jobId);
+  } catch (e) {
+    return [];
+  }
+}
+
 export {
   enqueue, getStatusSummary, listJobs, fetchNextJobForProcessing,
   markJobCompleted, markJobFailed, moveDlqRetry, deleteJob, listDeadJobs, listAllJobs, markJobDead, listParticularJobs, autoActivateMissedJobs

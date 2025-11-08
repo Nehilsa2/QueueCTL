@@ -2,6 +2,7 @@ import { spawn } from 'child_process';
 import { delayMs } from './utils.js';
 import * as queue from './queue.js';
 import * as config from './config.js';
+import db from './db.js'
 
 class Worker {
   constructor(id, shutdownSignal) {
@@ -129,7 +130,7 @@ class WorkerManager {
 
   start(count = 1) {
     // Reset any stuck processing jobs to pending state
-    const db = require('./db');
+    
     db.prepare(`UPDATE jobs SET state='pending', worker_id=NULL WHERE state='processing'`).run();
 
     for (let i = 0; i < count; i++) {
