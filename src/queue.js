@@ -184,14 +184,19 @@ function markJobDead(jobId, error, attempts) {
 
 
 // Append a log line to job_logs (safe if table missing)
-function addJobLog(jobId, message) {
+function addJobLog(jobId, logText) {
   try {
-    const stmt = db.prepare(`INSERT INTO job_logs (job_id, log_output, created_at) VALUES (?, ?, ?)`);
-    stmt.run(jobId, message, nowIso());
-  } catch (e) {
-    // ignore if table missing or any other DB error
+    const stmt = db.prepare(`
+      INSERT INTO job_logs (job_id, log_output, created_at)
+      VALUES (?, ?, datetime('now'))
+    `);
+    stmt.run(jobId, logText);
+    console.log(`[debug] Log saved for job ${jobId}: ${logText}`);
+  } catch (err) {
+    console.error(`[error] Failed to save log for job ${jobId}:`, err.message);
   }
 }
+
 
 // Retrieve logs for a job
 function getJobLogs(jobId) {
@@ -203,7 +208,21 @@ function getJobLogs(jobId) {
   }
 }
 
+// Retrieve a single job by id
+function getJob(jobId) {
+  try {
+    const stmt = db.prepare(`SELECT * FROM jobs WHERE id = ?`);
+    return stmt.get(jobId);
+  } catch (e) {
+    return null;
+  } 
+}
+
+
+
 export {
   enqueue, getStatusSummary, listJobs, fetchNextJobForProcessing,
-  markJobCompleted, markJobFailed, moveDlqRetry, deleteJob, listDeadJobs, listAllJobs, markJobDead, listParticularJobs, autoActivateMissedJobs
+  markJobCompleted, markJobFailed, moveDlqRetry, deleteJob, listDeadJobs, listAllJobs, markJobDead, listParticularJobs, autoActivateMissedJobs,
+  // helpers
+  addJobLog, getJobLogs, getJob
 };

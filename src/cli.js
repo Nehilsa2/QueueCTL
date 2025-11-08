@@ -177,6 +177,46 @@ yargs(hideBin(process.argv))
     }
   )
 
+  // ---------- LOGS ----------
+  .command(
+    'logs <jobId>',
+    'Show logs for a job',
+    (y) => y.positional('jobId', { type: 'string', describe: 'Job id' }),
+    (argv) => {
+      try {
+        const job = queue.getJob(argv.jobId);
+        if (!job) {
+          console.error(`No job found with id '${argv.jobId}'`);
+          process.exit(1);
+        }
+
+        // Print basic job info
+        console.log(chalk.bold(`Job: ${job.id}`));
+        console.log(`Command: ${job.command}`);
+        console.log(`State: ${job.state}`);
+        console.log(`Attempts: ${job.attempts}/${job.max_retries}`);
+        console.log(`Created: ${job.created_at}`);
+        console.log(`Updated: ${job.updated_at}`);
+        console.log('--- Logs ---');
+
+        const logs = queue.getJobLogs(argv.jobId) || [];
+        if (logs.length === 0) {
+          console.log('(no logs found)');
+          process.exit(0);
+        }
+
+        logs.forEach(l => {
+          const ts = l.created_at || l.createdAt || '';
+          console.log(`[${ts}] ${l.log_output}`);
+        });
+
+      } catch (err) {
+        console.error('Error fetching logs:', err.message);
+        process.exit(1);
+      }
+    }
+  )
+
   // ---------- CONFIG ----------
   .command(
     "config <action> [key] [value]",
