@@ -2,26 +2,26 @@ import db from './db.js';
 import { nowIso, uuidv4 } from './utils.js';
 import * as config from './config.js';
 
-//Enqueue Function
+// Enqueue new job (supports run_at in local IST)
 function enqueue(jobJson) {
   const job = typeof jobJson === 'string' ? JSON.parse(jobJson) : jobJson;
   const id = job.id || uuidv4();
   const command = job.command;
   const max_retries = job.max_retries || parseInt(config.getConfig('max_retries') || '3', 10);
   const priority = job.priority ?? 100;
-  const created_at = new Date().toISOString();
+  const created_at = nowIso();
   const updated_at = created_at;
 
-  // schedule future run time
   let run_at = job.run_at || null;
 
-  // If user provided a local (no 'Z') timestamp, convert to UTC
+  // 🕓 Interpret given run_at as local IST time (not UTC)
   if (run_at && !run_at.endsWith('Z')) {
-    const localDate = new Date(run_at); // interpreted as local time
-    run_at = localDate.toISOString();   // convert to UTC ISO string
+    const istDate = new Date(run_at + '+05:30');
+    run_at = istDate.toISOString();
   }
 
-  const state = 'pending';
+  // scheduled if future, else pending
+  const state = run_at && new Date(run_at) > new Date() ? 'scheduled' : 'pending';
 
   const stmt = db.prepare(`
     INSERT INTO jobs (
@@ -31,65 +31,48 @@ function enqueue(jobJson) {
 
   stmt.run(id, command, state, 0, max_retries, created_at, updated_at, priority, run_at, run_at);
 
-  console.log(`✅ Enqueued job ${id}${run_at ? ` (scheduled at ${run_at})` : ''}`);
+  console.log(
+    state === 'scheduled'
+      ? `⏰ Scheduled job ${id} for ${run_at}`
+      : `✅ Enqueued job ${id} (ready now)`
+  );
   return id;
 }
 
-//Get status of jobs 
-function getStatusSummary() {
-  const rows = db.prepare(`SELECT state, COUNT(*) as cnt FROM jobs GROUP BY state`).all();
-  const summary = rows.reduce((acc, r) => { acc[r.state] = r.cnt; return acc; }, {});
-  const pending = db.prepare(`SELECT COUNT(*) as c FROM jobs WHERE state='pending' AND (next_run_at IS NULL OR next_run_at <= ?)`).get(nowIso()).c;
-  return { by_state: summary, ready_pending: pending };
-}
-
-
-//List all the jobs
-function listJobs(state = null) {
-  if (state) {
-    return db.prepare(`SELECT * FROM jobs WHERE state = ? ORDER BY created_at DESC`).all(state);
-  } else {
-    return db.prepare(`SELECT * FROM jobs ORDER BY created_at DESC`).all();
+// Activate scheduled jobs when due
+function activateScheduledJobs() {
+  const now = nowIso();
+  const stmt = db.prepare(`
+    UPDATE jobs
+    SET state = 'pending', updated_at = ?
+    WHERE state = 'scheduled'
+      AND run_at IS NOT NULL
+      AND datetime(run_at) <= datetime(?)
+  `);
+  const info = stmt.run(now, now);
+  if (info.changes > 0) {
+    console.log(`⏱️ Activated ${info.changes} scheduled job(s) ready for processing`);
   }
 }
 
-// Fetch the next job due to run
-function fetchNextJobForProcessing(workerId) {
-  const now = new Date().toISOString();
-
-  const select = db.prepare(`
-    SELECT * FROM jobs
-    WHERE state = 'pending'
-      AND (
-        run_at IS NULL
-        OR datetime(run_at) <= datetime(?)
-      )
-      AND (
-        next_run_at IS NULL
-        OR datetime(next_run_at) <= datetime(?)
-      )
-    ORDER BY priority ASC, created_at ASC
-    LIMIT 1
-  `);
-
-  const job = select.get(now, now);
-  if (!job) return null;
-
-  // Mark as processing
-  const update = db.prepare(`
+// Reactivate waiting jobs ready for retry
+function reactivateWaitingJobs() {
+  const now = nowIso();
+  const stmt = db.prepare(`
     UPDATE jobs
-    SET state = 'processing', worker_id = ?, updated_at = ?
-    WHERE id = ? AND state = 'pending'
-  `);
-
-  const info = update.run(workerId, now, job.id);
-  if (info.changes === 0) return null;
-
-  return db.prepare(`SELECT * FROM jobs WHERE id = ?`).get(job.id);
+    SET state='pending', updated_at=?
+    WHERE state='waiting'
+      AND next_run_at IS NOT NULL
+      AND datetime(next_run_at) <= datetime(?)`);
+  const info = stmt.run(now, now);
+  if (info.changes > 0) {
+    console.log(`⚡ Reactivated ${info.changes} job(s) ready for retry`);
+  }
 }
 
+// Auto-activate missed jobs
 function autoActivateMissedJobs() {
-  const now = new Date().toISOString();
+  const now = nowIso();
   const stmt = db.prepare(`
     UPDATE jobs
     SET next_run_at = ?, updated_at = ?
@@ -97,132 +80,76 @@ function autoActivateMissedJobs() {
       AND run_at IS NOT NULL
       AND datetime(run_at) < datetime(?)
   `);
-  const info = stmt.run(now, now, now);
-  if (info.changes > 0) {
-    console.log(`⚡ Auto-activated ${info.changes} missed job(s) for immediate processing`);
-  }
+  stmt.run(now, now, now);
 }
 
+// Fetch next job ready for processing
+function fetchNextJobForProcessing(workerId) {
+  const now = nowIso();
 
+  const select = db.prepare(`
+    SELECT * FROM jobs
+    WHERE state = 'pending'
+      AND (run_at IS NULL OR datetime(run_at) <= datetime(?))
+      AND (next_run_at IS NULL OR datetime(next_run_at) <= datetime(?))
+    ORDER BY priority ASC, created_at ASC
+    LIMIT 1
+  `);
 
-//Mark if the job is completed
+  const job = select.get(now, now);
+  if (!job) return null;
+
+  const update = db.prepare(`
+    UPDATE jobs
+    SET state = 'processing', worker_id = ?, updated_at = ?
+    WHERE id = ? AND state = 'pending'
+  `);
+  const info = update.run(workerId, now, job.id);
+  if (info.changes === 0) return null;
+
+  return db.prepare(`SELECT * FROM jobs WHERE id = ?`).get(job.id);
+}
+
+// Mark job success/failure
 function markJobCompleted(id) {
-  const stmt = db.prepare(`UPDATE jobs SET state='completed', updated_at=? WHERE id = ?`);
-  stmt.run(nowIso(), id);
+  db.prepare(`UPDATE jobs SET state='completed', updated_at=? WHERE id=?`).run(nowIso(), id);
 }
-
-
-//mark if job is failed
 function markJobFailed(id, errMsg, attempts, max_retries, backoffSeconds) {
   const now = nowIso();
-  if (attempts >= max_retries) {
-    // final failure → move to dead (DLQ)
-    console.log(`[queue] job ${id} exceeded max retries and moved to DLQ`);
-    const stmt = db.prepare(`UPDATE jobs SET state='dead', attempts=?, updated_at=?, worker_id=NULL WHERE id=?`);
-    stmt.run(attempts, now, id);
+  if (attempts > max_retries) {
+    console.log(`[queue] ❌ job ${id} exceeded max retries and moved to DLQ`);
+    db.prepare(`
+      UPDATE jobs SET state='dead', attempts=?, updated_at=?, worker_id=NULL WHERE id=?
+    `).run(attempts, now, id);
   } else {
-    // retryable failure — schedule next run
     const nextRun = new Date(Date.now() + backoffSeconds * 1000).toISOString();
-    console.log(`[queue] job ${id} will retry in ${backoffSeconds}s`);
-    const stmt = db.prepare(`UPDATE jobs SET state='failed',attempts=?, next_run_at=?, updated_at=?, worker_id=NULL WHERE id=?`);
-    stmt.run(attempts, nextRun, now, id);
+    console.log(`[queue] 🔁 job ${id} retry scheduled in ${backoffSeconds}s`);
+    db.prepare(`
+      UPDATE jobs
+      SET state='waiting', attempts=?, next_run_at=?, updated_at=?, worker_id=NULL
+      WHERE id=?
+    `).run(attempts, nextRun, now, id);
   }
 }
 
-//retry the jobs in DLQ
-function moveDlqRetry(id) {
-  const job = db.prepare(`SELECT * FROM jobs WHERE id = ? AND state = 'dead'`).get(id);
-  if (!job) throw new Error('No dead job found with id ' + id);
-  const stmt = db.prepare(`UPDATE jobs SET state='pending', attempts=0,  next_run_at=NULL, updated_at=? WHERE id=?`);
-  stmt.run(nowIso(), id);
+// Status helpers
+function getStatusSummary() {
+  const rows = db.prepare(`SELECT state, COUNT(*) as cnt FROM jobs GROUP BY state`).all();
+  const summary = rows.reduce((a, r) => ((a[r.state] = r.cnt), a), {});
+  const pending = db
+    .prepare(`SELECT COUNT(*) as c FROM jobs WHERE state='pending' AND (next_run_at IS NULL OR next_run_at <= ?)`)
+    .get(nowIso()).c;
+  return { by_state: summary, ready_pending: pending };
 }
 
-//list all the dead jobs
-function listDeadJobs() {
-  const stmt = db.prepare(`SELECT * FROM jobs WHERE state='dead'`);
-  return stmt.all();
-}
-
-//delete jobs
-function deleteJob(id) {
-  return db.prepare(`DELETE FROM jobs WHERE id = ?`).run(id).changes;
-}
-
-//list all jobs
-function listAllJobs() {
-  const stmt = db.prepare(`SELECT * FROM jobs ORDER BY created_at DESC`);
-  return stmt.all();
-}
-
-//list particular state jobs
-
-function listParticularJobs(state) {
-  const stmt = db.prepare(`SELECT * FROM jobs where state= ? ORDER BY created_at DESC`);
-  return stmt.all(state);
-}
-
-//mark job dead
-function markJobDead(jobId, error, attempts) {
-  const stmt = db.prepare(`
-    UPDATE jobs
-    SET state = 'dead',
-        error = ?,
-        attempts = ?
-    WHERE id = ?
-  `);
-  stmt.run(error, attempts, jobId);
-
-  // Optionally insert into DLQ table
-  const dlqStmt = db.prepare(`
-    INSERT INTO dlq (job_id, error, moved_at)
-    VALUES (?, ?, datetime('now'))
-  `);
-  dlqStmt.run(jobId, error);
-
-  console.log(`[queue] job ${jobId} saved to DLQ`);
-}
-
-
-// Append a log line to job_logs (safe if table missing)
-function addJobLog(jobId, logText) {
-  try {
-    const stmt = db.prepare(`
-      INSERT INTO job_logs (job_id, log_output, created_at)
-      VALUES (?, ?, datetime('now'))
-    `);
-    stmt.run(jobId, logText);
-    console.log(`[debug] Log saved for job ${jobId}: ${logText}`);
-  } catch (err) {
-    console.error(`[error] Failed to save log for job ${jobId}:`, err.message);
-  }
-}
-
-
-// Retrieve logs for a job
-function getJobLogs(jobId) {
-  try {
-    const stmt = db.prepare(`SELECT * FROM job_logs WHERE job_id = ? ORDER BY created_at ASC`);
-    return stmt.all(jobId);
-  } catch (e) {
-    return [];
-  }
-}
-
-// Retrieve a single job by id
-function getJob(jobId) {
-  try {
-    const stmt = db.prepare(`SELECT * FROM jobs WHERE id = ?`);
-    return stmt.get(jobId);
-  } catch (e) {
-    return null;
-  } 
-}
-
-
-  
 export {
-  enqueue, getStatusSummary, listJobs, fetchNextJobForProcessing,
-  markJobCompleted, markJobFailed, moveDlqRetry, deleteJob, listDeadJobs, listAllJobs, markJobDead, listParticularJobs, autoActivateMissedJobs,
-  // helpers
-  addJobLog, getJobLogs, getJob
+  enqueue,
+  fetchNextJobForProcessing,
+  markJobCompleted,
+  markJobFailed,
+  reactivateWaitingJobs,
+  activateScheduledJobs,
+  autoActivateMissedJobs,
+  getStatusSummary
 };
+

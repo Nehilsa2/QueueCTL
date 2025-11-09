@@ -19,7 +19,7 @@ PRAGMA journal_mode = WAL;
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY,
   command TEXT NOT NULL,
-  state TEXT NOT NULL CHECK (state IN ('pending', 'processing', 'waiting', 'completed', 'dead')),
+  state TEXT NOT NULL CHECK (state IN ('pending', 'processing', 'waiting', 'completed', 'dead', 'scheduled')),
   attempts INTEGER NOT NULL DEFAULT 0,
   max_retries INTEGER NOT NULL DEFAULT 3,
   created_at TEXT NOT NULL,
@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   next_run_at TEXT,
   worker_id TEXT
 );
+
 
 CREATE TABLE IF NOT EXISTS config (
   key TEXT PRIMARY KEY,
