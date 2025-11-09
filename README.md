@@ -15,6 +15,14 @@
 git clone https://github.com/Nehilsa2/QueueCTL.git
 cd queuectl
 ```
+### Run test_script.sh file in bash
+Test script will run 
+```bash
+chmod +x test_script.sh
+./test_script.sh
+```
+
+### OR read below to manually do it!
 
 ### 📦 Install dependencies
 ```bash
@@ -44,7 +52,9 @@ queuectl --help
 ---
 
 ## 💡 **Usage Examples**
-
+---
+## Now open other terminal
+---
 ### ✅ Enqueue a job  (Run all Enqueue command inside the bash)
 
 enqueue job with id : Job1  
@@ -52,7 +62,7 @@ enqueue job with id : Job1
 queuectl enqueue '{"id":"job1","command":"echo Hello Queue"}'
 ```
 
-### 🧵 Start workers
+### 🧵 Start workers in different terminal
 ```bash
 queuectl worker start -count 3
 ```
