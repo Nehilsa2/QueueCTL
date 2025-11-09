@@ -15,6 +15,14 @@
 git clone https://github.com/Nehilsa2/QueueCTL.git
 cd queuectl
 ```
+### Run test_script.sh file in bash
+Test script will run and a worker.log file will be created at root to store worker logs
+```bash
+chmod +x test_script.sh
+./test_script.sh
+```
+
+### OR read below to manually do it!
 
 ### 📦 Install dependencies
 ```bash
@@ -44,7 +52,9 @@ queuectl --help
 ---
 
 ## 💡 **Usage Examples**
-
+---
+## Now open other terminal
+---
 ### ✅ Enqueue a job  (Run all Enqueue command inside the bash)
 
 enqueue job with id : Job1  
@@ -52,7 +62,7 @@ enqueue job with id : Job1
 queuectl enqueue '{"id":"job1","command":"echo Hello Queue"}'
 ```
 
-### 🧵 Start workers
+### 🧵 Start workers in different terminal
 ```bash
 queuectl worker start -count 3
 ```
@@ -226,9 +236,7 @@ queuectl dlq retry
 
 ## 🖥️ **Dashboard Preview**
 
-<p align="center">
-  <img src="https://github.com/kentcdodds/kentcdodds.com/raw/main/public/img/hero.gif" width="80%" alt="Dashboard Animation" />
-</p>
+<img width="1899" height="924" alt="image" src="https://github.com/user-attachments/assets/f0ce5635-73de-450f-884f-c97aed025f10" />
 
 ---
 
