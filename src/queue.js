@@ -2,7 +2,7 @@ import db from './db.js';
 import { nowIso, uuidv4 } from './utils.js';
 import * as config from './config.js';
 
-// Enqueue new job (supports run_at in local IST)
+// Enqueue
 function enqueue(jobJson) {
   const job = typeof jobJson === 'string' ? JSON.parse(jobJson) : jobJson;
   const id = job.id || uuidv4();
@@ -83,32 +83,49 @@ function autoActivateMissedJobs() {
   stmt.run(now, now, now);
 }
 
-// Fetch next job ready for processing
+
+
 function fetchNextJobForProcessing(workerId) {
-  const now = nowIso();
+  // Pick the highest priority job available for execution
+  const job = db
+    .prepare(
+      `
+      SELECT * FROM jobs
+      WHERE state = 'pending'
+      ORDER BY 
+        priority DESC,                         -- higher priority first
+        CASE 
+          WHEN run_at IS NULL THEN 1 
+          ELSE 0 
+        END,                                   -- jobs without schedule last
+        datetime(run_at) ASC,                  -- earlier scheduled jobs first
+        datetime(created_at) ASC               -- earliest created first
+      LIMIT 1
+      `
+    )
+    .get();
 
-  const select = db.prepare(`
-    SELECT * FROM jobs
-    WHERE state = 'pending'
-      AND (run_at IS NULL OR datetime(run_at) <= datetime(?))
-      AND (next_run_at IS NULL OR datetime(next_run_at) <= datetime(?))
-    ORDER BY priority ASC, created_at ASC
-    LIMIT 1
-  `);
-
-  const job = select.get(now, now);
   if (!job) return null;
 
-  const update = db.prepare(`
-    UPDATE jobs
-    SET state = 'processing', worker_id = ?, updated_at = ?
-    WHERE id = ? AND state = 'pending'
-  `);
-  const info = update.run(workerId, now, job.id);
-  if (info.changes === 0) return null;
+  // Lock and assign the job to this worker
+  db.prepare(
+    `
+    UPDATE jobs 
+    SET 
+      state='processing', 
+      worker_id=?, 
+      updated_at=datetime('now')
+    WHERE id=?
+    `
+  ).run(workerId, job.id);
 
-  return db.prepare(`SELECT * FROM jobs WHERE id = ?`).get(job.id);
+  console.log(
+    `[queue] 🧩 picked job ${job.id} (priority=${job.priority || 0}, run_at=${job.run_at || 'NULL'})`
+  );
+
+  return job;
 }
+
 
 // Mark job success/failure
 function markJobCompleted(id) {

@@ -99,7 +99,7 @@ yargs(hideBin(process.argv))
   )
 
   //-----------DLQ------------//
-  .command(
+ .command(
   'dlq <action> [jobId]',
   'Manage Dead Letter Queue (DLQ)',
   (y) =>
@@ -115,6 +115,7 @@ yargs(hideBin(process.argv))
   (argv) => {
     const { action, jobId } = argv;
 
+    // 🪦 DLQ LIST — identical style to `queuectl list`
     if (action === 'list') {
       const jobs = queue.listDeadJobs();
       if (!jobs || jobs.length === 0) {
@@ -124,22 +125,36 @@ yargs(hideBin(process.argv))
 
       const table = new Table({
         head: [
-          chalk.red('ID'),
-          chalk.red('Command'),
-          chalk.yellow('Attempts'),
+          chalk.cyan('ID'),
+          chalk.cyan('Command'),
+          chalk.cyan('State'),
+          chalk.cyan('Attempts'),
           chalk.cyan('Max Retries'),
-          chalk.gray('Created At (IST)'),
-          chalk.gray('Updated At (IST)'),
+          chalk.cyan('Created At (IST)'),
+          chalk.cyan('Updated At (IST)'),
         ],
         wordWrap: true,
         wrapOnWordBoundary: false,
-        colWidths: [15, 25, 15, 15, 22, 22],
+        colWidths: [18, 25, 15, 10, 12, 24, 24],
       });
 
       jobs.forEach((job) => {
         table.push([
           job.id,
           job.command,
+          chalk[
+            job.state === 'completed'
+              ? 'green'
+              : job.state === 'processing'
+              ? 'blue'
+              : job.state === 'waiting'
+              ? 'yellow'
+              : job.state === 'scheduled'
+              ? 'magenta'
+              : job.state === 'dead'
+              ? 'red'
+              : 'white'
+          ](job.state),
           job.attempts,
           job.max_retries,
           formatIST(job.created_at),
@@ -151,14 +166,13 @@ yargs(hideBin(process.argv))
       return;
     }
 
+    // 🔁 DLQ RETRY (single or all)
     if (action === 'retry') {
       try {
         if (jobId) {
-          // Retry specific job
           const retried = queue.retryDeadJob(jobId);
           console.log(`🔁 Retried job '${jobId}' (${retried} record updated)`);
         } else {
-          // Retry all dead jobs
           const retried = queue.retryDeadJob();
           if (retried > 0) console.log(`🔁 Retried ${retried} dead job(s)`);
           else console.log('🪦 DLQ empty — nothing to retry.');
@@ -169,6 +183,7 @@ yargs(hideBin(process.argv))
       return;
     }
 
+    // 🧹 DLQ CLEAR
     if (action === 'clear') {
       const deleted = queue.clearDeadJobs();
       if (deleted > 0)
@@ -178,6 +193,9 @@ yargs(hideBin(process.argv))
     }
   }
 )
+
+
+
 
 
 
@@ -197,7 +215,11 @@ yargs(hideBin(process.argv))
     try {
       const jobs = queue.listJobs(state);
       if (!jobs || jobs.length === 0) {
-        console.log(state ? `⚠️ No jobs found with state '${state}'` : "🗃️ No jobs found in the queue");
+        console.log(
+          state
+            ? `⚠️ No jobs found with state '${state}'`
+            : '🗃️ No jobs found in the queue'
+        );
         return;
       }
 
@@ -206,13 +228,14 @@ yargs(hideBin(process.argv))
           chalk.cyan('ID'),
           chalk.cyan('Command'),
           chalk.cyan('State'),
+          chalk.cyan('Attempts'),
+          chalk.cyan('Max Retries'),
           chalk.cyan('Created At (IST)'),
           chalk.cyan('Updated At (IST)'),
-          chalk.cyan('Worker'),
         ],
         wordWrap: true,
         wrapOnWordBoundary: false,
-        colWidths: [20, 15, 18, 20, 20, 18],
+        colWidths: [18, 25, 18, 10, 12, 20, 20],
       });
 
       jobs.forEach((job) => {
@@ -220,16 +243,22 @@ yargs(hideBin(process.argv))
           job.id,
           job.command,
           chalk[
-            job.state === 'completed' ? 'green'
-            : job.state === 'processing' ? 'blue'
-            : job.state === 'waiting' ? 'yellow'
-            : job.state === 'scheduled' ? 'magenta'
-            : job.state === 'dead' ? 'red'
-            : 'white'
+            job.state === 'completed'
+              ? 'green'
+              : job.state === 'processing'
+              ? 'blue'
+              : job.state === 'waiting'
+              ? 'yellow'
+              : job.state === 'scheduled'
+              ? 'magenta'
+              : job.state === 'dead'
+              ? 'red'
+              : 'white'
           ](job.state),
+          job.attempts,
+          job.max_retries,
           formatIST(job.created_at),
           formatIST(job.updated_at),
-          job.worker_id || '-',
         ]);
       });
 
@@ -239,6 +268,7 @@ yargs(hideBin(process.argv))
     }
   }
 )
+
 
 
 
