@@ -59,84 +59,132 @@ class Worker {
     console.log(`[worker ${this.id}] 💤 exited run loop.`);
   }
 
-  async executeJob(job) {
-    console.log(`[worker ${this.id}] executing job ${job.id}: ${job.command}`);
-    job.startTime = Date.now();
 
-    const env = { ...process.env, ATTEMPT: String(job.attempts) };
-    const proc = spawn(
+  //---------EXECUTE JOBS----------
+
+  async executeJob(job) {
+  const jobId = job.id;
+  const env = { ...process.env, ATTEMPT: String(job.attempts) };
+  const timeoutSeconds = parseInt(config.getConfig('job_timeout', '300'), 10);
+  const start = Date.now();
+
+  console.log(`[worker ${this.id}] executing job ${jobId}: ${job.command}`);
+
+  // 🚀 Always insert "Job started" log before execution
+  try {
+    db.prepare(`INSERT INTO job_logs (job_id, log_output, created_at) VALUES (?, ?, datetime('now'))`)
+      .run(jobId, `🚀 Job started at ${new Date().toISOString()}`);
+  } catch (e) {
+    console.error(`[worker ${this.id}] failed to log start:`, e.message);
+  }
+
+  let proc;
+  try {
+    proc = spawn(
       process.platform === 'win32' ? 'cmd.exe' : '/bin/sh',
       [process.platform === 'win32' ? '/c' : '-c', job.command],
-      { stdio: ['inherit', 'inherit', 'inherit'], env }
+      { env, stdio: ['pipe', 'pipe', 'pipe'] }
     );
+  } catch (spawnErr) {
+    const attempts = job.attempts + 1;
+    const maxRetries = job.max_retries;
+    const base = parseFloat(config.getConfig('backoff_base', '2'));
+    const backoffSeconds = Math.pow(base, attempts);
 
-    const timeoutSeconds = parseInt(config.getConfig('job_timeout', '300'), 10);
-    const start = Date.now();
-
-    let killed = false;
-
-    const timeoutHandle = setTimeout(() => {
-      killed = true;
-      console.log(
-        `[worker ${this.id}] ⏱️ job ${job.id} exceeded timeout (${timeoutSeconds}s), terminating...`
-      );
-      proc.kill('SIGTERM');
-    }, timeoutSeconds * 1000);
-
-    // proc.stdout.on('data', (data) => {
-    //   const out = data.toString().trim();
-    //   if (out) queue.addJobLog(job.id, out);
-    // });
-
-    // proc.stderr.on('data', (data) => {
-    //   const err = data.toString().trim();
-    //   if (err) queue.addJobLog(job.id, `[stderr] ${err}`);
-    // });
-
-
-    await new Promise((resolve) => {
-      proc.on('exit', (code, signal) => {
-        clearTimeout(timeoutHandle);
-
-        const duration = ((Date.now() - start) / 1000).toFixed(2);
-
-        const attempts = job.attempts + 1;
-        const maxRetries = job.max_retries;
-        const base = parseFloat(config.getConfig('backoff_base', '2'));
-        const backoffSeconds = Math.pow(base, attempts);
-
-        if (killed || signal === 'SIGTERM') {
-          console.log(`[worker ${this.id}] ❌ job ${job.id} timed out after ${duration}s`);
-          queue.markJobFailed(job.id, 'timeout', attempts, maxRetries, backoffSeconds);
-        }
-
-        else if (code === 0) {
-          console.log(`[worker ${this.id}] ✅ job ${job.id} completed successfully.`);
-          queue.markJobCompleted(job.id);
-        } 
-        
-        else {
-          const errMsg = signal === 'SIGTERM' ? 'timeout' : `exit=${code}`;
-          console.log(`[worker ${this.id}] ❌ job ${job.id} failed. retrying in ${backoffSeconds}s`);
-          queue.markJobFailed(job.id, errMsg, attempts, maxRetries, backoffSeconds);
-        }
-
-        resolve();
-      });
-
-      proc.on('error', (err) => {
-        clearTimeout(timeoutHandle);
-        const attempts = job.attempts + 1;
-        const maxRetries = job.max_retries;
-        const base = parseFloat(config.getConfig('backoff_base', '2'));
-        const backoffSeconds = Math.pow(base, attempts);
-
-        console.log(`[worker ${this.id}] ⚠️ job ${job.id} failed to start (${err.message}). retry in ${backoffSeconds}s`);
-        queue.markJobFailed(job.id, err.message, attempts, maxRetries, backoffSeconds);
-        resolve();
-      });
-    });
+    queue.markJobFailed(jobId, spawnErr.message, attempts, maxRetries, backoffSeconds);
+    db.prepare(`INSERT INTO job_logs (job_id, log_output, created_at) VALUES (?, ?, datetime('now'))`)
+      .run(jobId, `⚠️ Failed to spawn process: ${spawnErr.message}`);
+    db.prepare(`INSERT INTO job_logs (job_id, log_output, created_at) VALUES (?, ?, datetime('now'))`)
+      .run(jobId, `🧩 Job terminated (spawn error) at ${new Date().toISOString()}`);
+    return;
   }
+
+  let killed = false;
+  const timeoutHandle = setTimeout(() => {
+    killed = true;
+    console.log(`[worker ${this.id}] ⏱️ job ${jobId} exceeded timeout (${timeoutSeconds}s), terminating...`);
+    proc.kill('SIGTERM');
+  }, timeoutSeconds * 1000);
+
+  // 📤 Capture stdout & stderr
+  proc.stdout?.on('data', (data) => {
+    const msg = data.toString().trim();
+    if (!msg) return;
+    try {
+      db.prepare(`INSERT INTO job_logs (job_id, log_output, created_at) VALUES (?, ?, datetime('now'))`)
+        .run(jobId, `📤 ${msg}`);
+    } catch (e) {
+      console.error(`[worker ${this.id}] stdout log error:`, e.message);
+    }
+  });
+
+  proc.stderr?.on('data', (data) => {
+    const msg = data.toString().trim();
+    if (!msg) return;
+    try {
+      db.prepare(`INSERT INTO job_logs (job_id, log_output, created_at) VALUES (?, ?, datetime('now'))`)
+        .run(jobId, `[stderr] ${msg}`);
+    } catch (e) {
+      console.error(`[worker ${this.id}] stderr log error:`, e.message);
+    }
+  });
+
+  // Wait for job completion
+  await new Promise((resolve) => {
+    proc.on('exit', (code, signal) => {
+      clearTimeout(timeoutHandle);
+      const duration = ((Date.now() - start) / 1000).toFixed(2);
+      const attempts = job.attempts + 1;
+      const maxRetries = job.max_retries;
+      const base = parseFloat(config.getConfig('backoff_base', '2'));
+      const backoffSeconds = Math.pow(base, attempts);
+
+      let statusMessage = '';
+      if (killed || signal === 'SIGTERM') {
+        statusMessage = `❌ Job timed out after ${duration}s`;
+        queue.markJobFailed(jobId, 'timeout', attempts, maxRetries, backoffSeconds);
+      } else if (code === 0) {
+        statusMessage = `✅ Job completed successfully (duration: ${duration}s)`;
+        queue.markJobCompleted(jobId);
+      } else {
+        statusMessage = `❌ Job failed with exit=${code}, retrying in ${backoffSeconds}s`;
+        queue.markJobFailed(jobId, `exit=${code}`, attempts, maxRetries, backoffSeconds);
+      }
+
+      try {
+        db.prepare(`INSERT INTO job_logs (job_id, log_output, created_at) VALUES (?, ?, datetime('now'))`)
+          .run(jobId, statusMessage);
+        db.prepare(`INSERT INTO job_logs (job_id, log_output, created_at) VALUES (?, ?, datetime('now'))`)
+          .run(jobId, `🧩 Job terminated (exit=${code ?? 'N/A'}) at ${new Date().toISOString()}`);
+      } catch (e) {
+        console.error(`[worker ${this.id}] failed to log termination:`, e.message);
+      }
+
+      resolve();
+    });
+
+    proc.on('error', (err) => {
+      clearTimeout(timeoutHandle);
+      const attempts = job.attempts + 1;
+      const maxRetries = job.max_retries;
+      const base = parseFloat(config.getConfig('backoff_base', '2'));
+      const backoffSeconds = Math.pow(base, attempts);
+      queue.markJobFailed(jobId, err.message, attempts, maxRetries, backoffSeconds);
+
+      try {
+        db.prepare(`INSERT INTO job_logs (job_id, log_output, created_at) VALUES (?, ?, datetime('now'))`)
+          .run(jobId, `⚠️ Job process error: ${err.message}`);
+        db.prepare(`INSERT INTO job_logs (job_id, log_output, created_at) VALUES (?, ?, datetime('now'))`)
+          .run(jobId, `🧩 Job terminated (error) at ${new Date().toISOString()}`);
+      } catch (e) {
+        console.error(`[worker ${this.id}] failed to log process error:`, e.message);
+      }
+
+      resolve();
+    });
+  });
+}
+
 
   async stop() {
     console.log(`[worker ${this.id}] 🕓 Graceful stop requested...`);

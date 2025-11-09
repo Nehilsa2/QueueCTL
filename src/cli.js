@@ -273,44 +273,87 @@ yargs(hideBin(process.argv))
 
 
   // ---------- LOGS ----------
-  .command(
-    'logs <jobId>',
-    'Show logs for a job',
-    (y) => y.positional('jobId', { type: 'string', describe: 'Job id' }),
-    (argv) => {
-      try {
-        const job = queue.getJob(argv.jobId);
-        if (!job) {
-          console.error(`No job found with id '${argv.jobId}'`);
-          process.exit(1);
-        }
-
-        // Print basic job info
-        console.log(chalk.bold(`Job: ${job.id}`));
-        console.log(`Command: ${job.command}`);
-        console.log(`State: ${job.state}`);
-        console.log(`Attempts: ${job.attempts}/${job.max_retries}`);
-        console.log(`Created: ${job.created_at}`);
-        console.log(`Updated: ${job.updated_at}`);
-        console.log('--- Logs ---');
-
-        const logs = queue.getJobLogs(argv.jobId) || [];
-        if (logs.length === 0) {
-          console.log('(no logs found)');
-          process.exit(0);
-        }
-
-        logs.forEach(l => {
-          const ts = l.created_at || l.createdAt || '';
-          console.log(`[${ts}] ${l.log_output}`);
-        });
-
-      } catch (err) {
-        console.error('Error fetching logs:', err.message);
+  // ---------- LOGS ----------
+.command(
+  'logs <jobId>',
+  'Show logs for a job (use --follow for live streaming)',
+  (y) =>
+    y
+      .positional('jobId', { type: 'string', describe: 'Job id' })
+      .option('follow', {
+        alias: 'f',
+        type: 'boolean',
+        describe: 'Stream logs live (like tail -f)',
+        default: false,
+      }),
+  async (argv) => {
+    try {
+      const job = queue.listJobs().find((j) => j.id === argv.jobId);
+      if (!job) {
+        console.error(`❌ No job found with id '${argv.jobId}'`);
         process.exit(1);
       }
+
+      console.log(chalk.bold(`\n📘 Job: ${job.id}`));
+      console.log(`Command: ${job.command}`);
+      console.log(`State: ${job.state}`);
+      console.log(`Attempts: ${job.attempts}/${job.max_retries}`);
+      console.log(`Created: ${formatIST(job.created_at)}`);
+      console.log(`Updated: ${formatIST(job.updated_at)}`);
+      console.log(chalk.cyan('--- Logs ---\n'));
+
+      let lastCount = 0;
+
+      const printLogs = () => {
+        const logs = queue.getJobLogs(argv.jobId);
+        if (!logs || logs.length === 0) {
+          if (!argv.follow) console.log('(no logs found)');
+          return;
+        }
+
+        const newLogs = logs.slice(lastCount);
+        newLogs.forEach((l) => {
+          const ts = formatIST(l.created_at);
+          let msg = l.log_output || '';
+
+          if (msg.startsWith('[stderr]')) {
+            msg = chalk.red(msg);
+          } else if (msg.includes('✅') || msg.includes('📤')) {
+            msg = chalk.green(msg);
+          } else if (msg.includes('❌') || msg.includes('⚠️')) {
+            msg = chalk.yellow(msg);
+          } else {
+            msg = chalk.white(msg);
+          }
+
+          console.log(`[${chalk.gray(ts)}] ${msg}`);
+        });
+        lastCount = logs.length;
+      };
+
+      // Print initial logs
+      printLogs();
+
+      if (argv.follow) {
+        console.log(chalk.gray('\n⏳ Following logs... (Ctrl+C to stop)\n'));
+        const interval = setInterval(() => {
+          printLogs();
+        }, 1000);
+
+        process.on('SIGINT', () => {
+          clearInterval(interval);
+          console.log(chalk.gray('\n🛑 Stopped following logs.'));
+          process.exit(0);
+        });
+      } else {
+        process.exit(0);
+      }
+    } catch (err) {
+      console.error('❌ Error fetching logs:', err.message);
+      process.exit(1);
     }
-  )
+  }
+)
 
   // ---------- METRICS ----------
 

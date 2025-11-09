@@ -228,6 +228,14 @@ function getStatusSummary() {
   return { by_state: summary, ready_pending: pending };
 }
 
+function addJobLog(jobId, message) {
+  db.prepare(`INSERT INTO job_logs (job_id, log_output) VALUES (?, ?)`).run(jobId, message);
+}
+
+function getJobLogs(jobId) {
+  return db.prepare(`SELECT log_output, created_at FROM job_logs WHERE job_id = ? ORDER BY id ASC`).all(jobId);
+}
+
 export {
   enqueue,
   fetchNextJobForProcessing,
@@ -240,6 +248,8 @@ export {
   listJobs,
   listDeadJobs,
   retryDeadJob,
-  clearDeadJobs
+  clearDeadJobs,
+  addJobLog,
+  getJobLogs
 };
 
