@@ -6,17 +6,13 @@
   <img src="https://img.shields.io/badge/Queue-Management-orange?style=for-the-badge" />
 </p>
 
-<p align="center">
-  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&pause=2000&color=58A6FF&width=600&lines=🔥+Feature-Rich+Job+Queue+with+Retries+and+DLQ;⚙️+Real-Time+Monitoring+via+Dashboard;💾+SQLite+Backed+and+CLI+Controlled" alt="Typing SVG" />
-</p>
-
 ---
 
 ## ⚙️ **Setup & Installation**
 
 ### 🧩 Clone the repository
 ```bash
-git clone https://github.com/<your-username>/queuectl.git
+git clone https://github.com/Nehilsa2/QueueCTL.git
 cd queuectl
 ```
 
@@ -40,7 +36,7 @@ Visit 👉 **http://localhost:5173**
 
 ### 🧠 Use the CLI globally
 ```bash
-npm link
+npm i -g .
 queuectl --help
 ```
 
@@ -203,10 +199,10 @@ queuectl dlq retry
 |----------|-------------|
 | `queuectl enqueue <json>` | Add a new job |
 | `queuectl list` | List all jobs |
-| `queuectl worker start -c N` | Start N workers |
+| `queuectl worker start -count N` | Start N workers |
 | `queuectl dlq list` | List DLQ jobs |
 | `queuectl dlq retry` | Retry DLQ jobs |
-| `queuectl logs <id>` | View logs for a job |
+| `queuectl logs <Jobid>` | View logs for a job |
 | `queuectl metrics` | Show job metrics |
 | `queuectl config set key value` | Change runtime config |
 
@@ -251,18 +247,3 @@ queuectl dlq retry
 - 🧠 CLI (yargs + chalk + cli-table3)  
 - 🎨 React + TailwindCSS + Framer Motion  
 
----
-
-## 💬 **Contributing**
-
-1. Fork the repo 🍴  
-2. Create a branch (`git checkout -b feature/new`)  
-3. Commit your changes (`git commit -m "Added feature"`)  
-4. Push (`git push origin feature/new`)  
-5. Open a Pull Request 🚀  
-
----
-
-<p align="center">
-  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&pause=2000&color=00FFAA&width=600&lines=Made+with+❤️+by+Nehil+Sahu;QueueCTL+-+Manage.+Monitor.+Master." />
-</p>
