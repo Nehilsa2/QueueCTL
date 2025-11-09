@@ -23,16 +23,17 @@ npm install
 
 ### ▶️ Start the backend server
 ```bash
+cd Backend
+npm install
 node app.js
 ```
 
 ### 💻 Start the frontend dashboard
 ```bash
-cd dashboard
+cd Frontend
 npm install
 npm run dev
 ```
-Visit 👉 **http://localhost:5173**
 
 ### 🧠 Use the CLI globally
 ```bash
@@ -44,14 +45,16 @@ queuectl --help
 
 ## 💡 **Usage Examples**
 
-### ✅ Enqueue a job
+### ✅ Enqueue a job  (Run all Enqueue command inside the bash)
+
+enqueue job with id : Job1  
 ```bash
-queuectl enqueue '{"command":"echo Hello Queue"}'
+queuectl enqueue '{"id":"job1","command":"echo Hello Queue"}'
 ```
 
 ### 🧵 Start workers
 ```bash
-queuectl worker start -c 3
+queuectl worker start -count 3
 ```
 
 ### 📋 List jobs
@@ -152,17 +155,6 @@ stateDiagram-v2
 
 ---
 
-## 🧪 **Testing Instructions**
-
-### 1️⃣ Enqueue jobs
-```bash
-queuectl enqueue '{"command":"sleep 2 && echo Done"}'
-```
-
-### 2️⃣ Start workers
-```bash
-queuectl worker start -c 2
-```
 
 ### 3️⃣ Verify dashboard
 Visit **http://localhost:5173**
