@@ -28,6 +28,11 @@ chmod +x test_script.sh
 ```bash
 npm install
 ```
+### 🧠 Use the CLI globally
+```bash
+npm i -g .
+queuectl --help
+```
 
 ### ▶️ Start the backend server
 ```bash
@@ -43,12 +48,6 @@ npm install
 npm run dev
 ```
 
-### 🧠 Use the CLI globally
-```bash
-npm i -g .
-queuectl --help
-```
-
 ---
 
 ## 💡 **Usage Examples**
@@ -60,6 +59,56 @@ queuectl --help
 enqueue job with id : Job1  
 ```bash
 queuectl enqueue '{"id":"job1","command":"echo Hello Queue"}'
+```
+### Examples
+## 📦 Job Enqueue Examples
+
+### 🧩 Basic Command
+```bash
+node src/cli.js enqueue '{"command":"echo Hello QueueCTL!"}'
+```
+🔁 With Custom Retries
+```bash
+
+node src/cli.js enqueue '{"command":"ping -n 5 127.0.0.1", "max_retries":5}'
+```
+⚙️ With Priority
+```bash
+
+node src/cli.js enqueue '{"command":"echo Urgent job", "priority":1}'
+```
+⏰ With Scheduled Execution
+```bash
+
+node src/cli.js enqueue '{"command":"echo Scheduled job", "run_at":"2025-11-09T18:00:00"}'
+```
+⏳ With Custom Timeout
+```bash
+
+node src/cli.js enqueue '{"command":"ping -n 10 127.0.0.1", "timeout":5}'
+```
+🧠 With All Attributes
+```bash
+
+node src/cli.js enqueue '{
+  "command": "ping -n 10 127.0.0.1",
+  "max_retries": 4,
+  "priority": 10,
+  "run_at": "2025-11-09T18:00:00",
+  "next_run_at": "2025-11-09T18:05:00",
+  "timeout": 5
+}'
+```
+💀 Failing Job (DLQ Test)
+```bash
+
+node src/cli.js enqueue '{"command":"false"}'
+```
+🕒 Timeout Test (Windows)
+```bash
+
+node src/cli.js enqueue '{"command":"ping -n 20 127.0.0.1"}'
+
 ```
 
 ### 🧵 Start workers in different terminal
@@ -83,7 +132,10 @@ queuectl dlq clear
 ```bash
 queuectl config set max_retries 5
 queuectl config set backoff_base 3
+queuectl config set job_timeout 10
 queuectl config get job_timeout
+queuectl config get max_retries
+queuectl config get backoff_base
 ```
 
 ---
