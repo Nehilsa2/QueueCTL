@@ -24,6 +24,16 @@
 
 ## ⚙️ **Setup & Installation**
 
+> **📝 Note:**  
+> This project requires Nodejs version **v20.x LTS**.  
+> You can verify your version using:
+> ```bash
+> node -v
+> ```
+> If you have an older version, update from [nodejs.org](https://nodejs.org/en/download/) before proceeding.
+
+
+
 ### 🧩 Clone the repository
 ```bash
 git clone https://github.com/Nehilsa2/QueueCTL.git
