@@ -46,15 +46,26 @@ CREATE TABLE IF NOT EXISTS job_logs (
 
 
 CREATE TABLE IF NOT EXISTS job_metrics (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    job_id TEXT,
-    command TEXT,
-    state TEXT,
-    duration REAL,
-    completed_at TEXT DEFAULT (datetime('now'))
-  );
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id TEXT,
+  command TEXT,
+  state TEXT,
+  duration REAL,
+  completed_at TEXT DEFAULT (datetime('now')),
+  worker_id TEXT,                -- ← NEW COLUMN
+  FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
+);
 `);
 
+// ──────────────────────────────────────────────────────────────
+// Safe migration: add worker_id if it does not exist yet
+// ──────────────────────────────────────────────────────────────
+const tableInfo = db.pragma('table_info(job_metrics)');
+const hasWorkerId = tableInfo.some(col => col.name === 'worker_id');
+if (!hasWorkerId) {
+  db.exec('ALTER TABLE job_metrics ADD COLUMN worker_id TEXT');
+  console.log('Migration: added worker_id to job_metrics');
+}
 
   
 

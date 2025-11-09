@@ -32,7 +32,7 @@ app.get("/api/jobs", (req, res) => {
     const { state } = req.query;
     const jobs = state
       ? queue.listParticularJobs(state)
-      : queue.listAllJobs();
+      : queue.listJobs();
     res.json(jobs);
   } catch (err) {
     res.status(500).json({ error: err.message });
