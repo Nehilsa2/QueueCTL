@@ -107,11 +107,11 @@ class Worker {
 
     let proc;
     try {
-      proc = spawn(
-        process.platform === 'win32' ? 'cmd.exe' : '/bin/sh',
-        [process.platform === 'win32' ? '/c' : '-c', job.command],
-        { env, stdio: ['pipe', 'pipe', 'pipe'] }
-      );
+      proc = spawn(job.command, {
+        env,
+        shell: true, // ✅ auto-selects the right shell
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
     } catch (spawnErr) {
       const attempts = job.attempts + 1;
       const maxRetries = job.max_retries;
