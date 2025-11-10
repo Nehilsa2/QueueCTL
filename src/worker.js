@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import chalk from 'chalk';  // ← Added for coloring
+import chalk from 'chalk';
 import { delayMs, nowIso } from './utils.js';
 import * as queue from './queue.js';
 import * as config from './config.js';
@@ -56,42 +56,39 @@ class Worker {
   }
 
   recordMetric(metricState, durationSec) {
-  if (!this.currentJob) return;
+    if (!this.currentJob) return;
 
-  const jobId = this.currentJob.id;
-  const command = this.currentJob.command;
-  const workerId = this.id;
-  const completedAt = nowIso();
+    const jobId = this.currentJob.id;
+    const command = this.currentJob.command;
+    const workerId = this.id;
+    const completedAt = nowIso();
 
-  try {
-    // Check if job already exists in metrics table
-    const existing = db
-      .prepare(`SELECT id FROM job_metrics WHERE job_id = ?`)
-      .get(jobId);
+    try {
+      const existing = db
+        .prepare(`SELECT id FROM job_metrics WHERE job_id = ?`)
+        .get(jobId);
 
-    if (existing) {
-      // Update existing metric instead of inserting duplicate
-      db.prepare(`
-        UPDATE job_metrics
-        SET 
-          state = ?,
-          duration = ?,
-          worker_id = ?,
-          completed_at = ?
-        WHERE job_id = ?
-      `).run(metricState, durationSec, workerId, completedAt, jobId);
-    } else {
-      // Insert new metric for first run
-      db.prepare(`
-        INSERT INTO job_metrics
-        (job_id, command, state, duration, worker_id, completed_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(jobId, command, metricState, durationSec, workerId, completedAt);
+      if (existing) {
+        db.prepare(`
+          UPDATE job_metrics
+          SET 
+            state = ?,
+            duration = ?,
+            worker_id = ?,
+            completed_at = ?
+          WHERE job_id = ?
+        `).run(metricState, durationSec, workerId, completedAt, jobId);
+      } else {
+        db.prepare(`
+          INSERT INTO job_metrics
+          (job_id, command, state, duration, worker_id, completed_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(jobId, command, metricState, durationSec, workerId, completedAt);
+      }
+    } catch (e) {
+      console.error(chalk.red(`${this.id} metric failed:`), e.message);
     }
-  } catch (e) {
-    console.error(chalk.red(`${this.id} metric failed:`), e.message);
   }
-}
 
   async executeJob(job) {
     const jobId = job.id;
@@ -272,33 +269,14 @@ class WorkerManager {
   }
 
   start(count = 1) {
-    // Reset any stuck processing jobs before starting
+    // Reset stuck jobs
     db.prepare(`UPDATE jobs SET state='pending', worker_id=NULL WHERE state='processing'`).run();
 
-    // Create workers
     for (let i = 0; i < count; i++) {
       const wid = `worker-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${i}`;
       const worker = new Worker(wid, () => this.shutdownRequested);
       this.workers.set(wid, worker);
-
-      // Register worker in DB
-      db.prepare(`
-        INSERT OR REPLACE INTO workers (id, started_at, last_heartbeat)
-        VALUES (?, datetime('now'), datetime('now'))
-      `).run(wid);
-
-      // Start worker loop
       worker.runLoop();
-
-      // 🩺 Heartbeat interval (every 2s)
-      const heartbeat = setInterval(() => {
-        db.prepare(`
-          UPDATE workers SET last_heartbeat = datetime('now') WHERE id = ?
-        `).run(wid);
-      }, 2000);
-
-      // Stop heartbeat on shutdown
-      worker.heartbeat = heartbeat;
     }
 
     console.log(chalk.green(`🟢 Started ${count} worker(s)`));
@@ -308,17 +286,11 @@ class WorkerManager {
     console.log(chalk.red(`🛑 Shutting down all workers...`));
     this.shutdownRequested = true;
 
-    // Stop all worker loops gracefully
-    await Promise.all([...this.workers.values()].map(async (w) => {
-      clearInterval(w.heartbeat);
-      await w.stop();
-      db.prepare(`DELETE FROM workers WHERE id = ?`).run(w.id);
-    }));
+    await Promise.all([...this.workers.values()].map((w) => w.stop()));
 
     console.log(chalk.green(`✅ All workers stopped`));
     this.workers.clear();
   }
 }
-
 
 export { WorkerManager };

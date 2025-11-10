@@ -2,7 +2,7 @@
 # ============================================================
 # 🚀 QueueCTL — Universal Setup & Test Script
 # Author: Nehil Sahu
-# Description: Auto setup for Backend + Frontend + CLI (src)
+# Description: Auto setup for Core + Backend + Frontend + Job Testing
 # ============================================================
 
 echo ""
@@ -13,7 +13,14 @@ sleep 1
 
 ROOT_DIR=$(pwd)
 
-# --- Backend Setup ---
+# --- CORE SETUP (CLI + Worker + Queue) ---
+echo ""
+echo "🧠 Setting up Core..."
+cd "$ROOT_DIR" || { echo "❌ Root folder missing!"; exit 1; }
+npm install --silent || { echo "❌ Core install failed!"; exit 1; }
+echo "✅ Core setup complete."
+
+# --- BACKEND SETUP ---
 echo ""
 echo "🧱 Setting up Backend..."
 cd "$ROOT_DIR/Backend" || { echo "❌ Backend folder missing!"; exit 1; }
@@ -25,7 +32,7 @@ BACK_PID=$!
 sleep 3
 echo "✅ Backend running at http://localhost:8080 (PID: $BACK_PID)"
 
-# --- Frontend Setup ---
+# --- FRONTEND SETUP ---
 echo ""
 echo "🎨 Setting up Frontend..."
 cd "$ROOT_DIR/Frontend" || { echo "❌ Frontend folder missing!"; exit 1; }
@@ -37,39 +44,48 @@ FRONT_PID=$!
 sleep 5
 echo "✅ Frontend running at http://localhost:5173 (PID: $FRONT_PID)"
 
-# --- CLI / Core Setup ---
-echo ""
-echo "🧠 Setting up Core (src)..."
-cd "$ROOT_DIR/src" || { echo "❌ src folder missing!"; exit 1; }
-npm install --silent || { echo "❌ CLI install failed!"; exit 1; }
-echo "✅ CLI & Core setup complete."
-
-# --- Enqueue Jobs ---
+# --- JOB ENQUEUE ---
 echo ""
 echo "🧩 Enqueuing sample jobs..."
+cd "$ROOT_DIR/src" || { echo "❌ Root folder missing!"; exit 1; }
 node cli.js enqueue '{"command":"echo Hello from QueueCTL!"}'
 node cli.js enqueue '{"command":"sleep 2 && echo Job 2 done!"}'
 node cli.js enqueue '{"command":"false"}'
 sleep 1
 echo "✅ Jobs enqueued successfully."
 
-# --- List Jobs ---
+# --- JOB LIST ---
 echo ""
 echo "📋 Current Jobs:"
 node cli.js list
 
-# --- Start Workers ---
+# --- WORKER START ---
 echo ""
 echo "⚙️ Starting 2 workers in background..."
 nohup node cli.js worker start -c 2 > "$ROOT_DIR/worker.log" 2>&1 &
 WORKER_PID=$!
-echo "✅ Workers running (PID: $WORKER_PID)"
-sleep 2
+sleep 3
+echo "✅ Workers running in background (PID: $WORKER_PID)"
 
-# --- Wait until all jobs are completed or dead ---
+# --- SHOW WORKER IDS ---
+sleep 2
+echo ""
+echo "🔍 Detecting Worker IDs..."
+WORKER_IDS=$(grep -o "worker-[0-9]*-[a-z0-9]*-[0-9]*" "$ROOT_DIR/worker.log" | sort | uniq)
+
+if [ -z "$WORKER_IDS" ]; then
+  echo "⚠️ No worker IDs found yet (workers may still be starting)."
+else
+  echo "🧠 Active Worker IDs:"
+  echo "$WORKER_IDS" | while read -r wid; do
+    echo "   • $wid"
+  done
+fi
+
+# --- WAIT FOR JOB COMPLETION ---
 echo ""
 echo "⏳ Waiting for workers to process jobs..."
-MAX_WAIT=60   # 60 seconds max wait
+MAX_WAIT=30
 CHECK_INTERVAL=3
 TIME_PASSED=0
 
@@ -92,22 +108,13 @@ if [ $TIME_PASSED -ge $MAX_WAIT ]; then
   echo "⚠️ Timeout reached (some jobs may still be processing)."
 fi
 
-# --- Display Metrics ---
+# --- METRICS SUMMARY ---
 echo ""
 echo "📊 Queue Metrics Summary:"
 node cli.js metrics
 
-# --- Display Logs for First Job ---
-FIRST_ID=$(node cli.js list | awk '/^[0-9a-f-]{8}/ {print $1; exit}')
-if [ -n "$FIRST_ID" ]; then
-  echo ""
-  echo "🧾 Showing logs for job: $FIRST_ID"
-  node cli.js logs "$FIRST_ID"
-else
-  echo "⚠️ No jobs found to show logs."
-fi
 
-# --- Summary ---
+# --- SUMMARY ---
 echo ""
 echo "=============================================="
 echo " ✅ QueueCTL test completed successfully!"
@@ -118,6 +125,13 @@ echo " 🧠 Logs saved at:"
 echo "    • backend.log"
 echo "    • frontend.log"
 echo "    • worker.log"
+echo ""
+if [ -n "$WORKER_IDS" ]; then
+  echo " 🧠 Active Worker IDs:"
+  echo "$WORKER_IDS" | while read -r wid; do
+    echo "    • $wid"
+  done
+fi
 echo ""
 echo " 💡 Stop all with:"
 echo "    kill $BACK_PID $FRONT_PID $WORKER_PID"
