@@ -1,23 +1,58 @@
 #!/bin/bash
 # ============================================================
-# 🚀 QueueCTL — Universal Setup & Test Script
+# 🚀 QueueCTL — Universal Setup & Test Script (Auto Node Setup)
 # Author: Nehil Sahu
-# Description: Auto setup for Core + Backend + Frontend + Job Testing
+# Description: One-click setup for Core + Backend + Frontend + Job Testing
 # ============================================================
 
 echo ""
 echo "=============================================="
-echo " ⚙️  Starting QueueCTL Setup & Test Workflow..."
+echo " ⚙ Starting QueueCTL Setup & Test Workflow..."
 echo "=============================================="
 sleep 1
 
 ROOT_DIR=$(pwd)
+REQUIRED_NODE_VERSION=20
+
+# --- NODE & NVM SETUP ---
+echo ""
+echo "🧩 Checking Node.js environment..."
+
+if ! command -v nvm &> /dev/null; then
+  echo "📦 NVM not found — installing NVM..."
+  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash
+  export NVM_DIR="$HOME/.nvm"
+  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+  echo "✅ NVM installed successfully."
+else
+  echo "✅ NVM already installed."
+fi
+
+# Load NVM (non-interactive)
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+# Ensure required Node version
+if ! nvm ls "$REQUIRED_NODE_VERSION" | grep -q "v$REQUIRED_NODE_VERSION"; then
+  echo "📦 Installing Node.js v$REQUIRED_NODE_VERSION..."
+  nvm install "$REQUIRED_NODE_VERSION"
+fi
+
+nvm use "$REQUIRED_NODE_VERSION"
+
+# ✅ Ensure Node & npm accessible in non-interactive mode
+export PATH="$NVM_DIR/versions/node/v$REQUIRED_NODE_VERSION/bin:$PATH"
+
+NODE_VERSION=$(node -v)
+NPM_VERSION=$(npm -v)
+echo "✅ Using Node $NODE_VERSION (npm $NPM_VERSION)"
 
 # --- CORE SETUP (CLI + Worker + Queue) ---
 echo ""
 echo "🧠 Setting up Core..."
 cd "$ROOT_DIR" || { echo "❌ Root folder missing!"; exit 1; }
-npm install --silent || { echo "❌ Core install failed!"; exit 1; }
+
+npm install --silent || { echo "❌ Core install failed! node version <=20 required"; exit 1; }
 echo "✅ Core setup complete."
 
 # --- BACKEND SETUP ---
@@ -61,7 +96,7 @@ node cli.js list
 
 # --- WORKER START ---
 echo ""
-echo "⚙️ Starting 2 workers in background..."
+echo "⚙ Starting 2 workers in background..."
 nohup node cli.js worker start -c 2 > "$ROOT_DIR/worker.log" 2>&1 &
 WORKER_PID=$!
 sleep 3
@@ -71,10 +106,21 @@ echo "✅ Workers running in background (PID: $WORKER_PID)"
 sleep 2
 echo ""
 echo "🔍 Detecting Worker IDs..."
-WORKER_IDS=$(grep -o "worker-[0-9]*-[a-z0-9]*-[0-9]*" "$ROOT_DIR/worker.log" | sort | uniq)
+ATTEMPTS=0
+WORKER_IDS=""
+
+while [ $ATTEMPTS -lt 5 ]; do
+  WORKER_IDS=$(grep -oE "worker-[0-9]+-[a-z0-9]+-[0-9]+" "$ROOT_DIR/worker.log" | sort | uniq)
+  if [ -n "$WORKER_IDS" ]; then
+    break
+  fi
+  echo "🕵️‍♂️ Attempt $((ATTEMPTS + 1)) — waiting for worker IDs..."
+  sleep 2
+  ATTEMPTS=$((ATTEMPTS + 1))
+done
 
 if [ -z "$WORKER_IDS" ]; then
-  echo "⚠️ No worker IDs found yet (workers may still be starting)."
+  echo "⚠ No worker IDs found yet (workers may still be starting)."
 else
   echo "🧠 Active Worker IDs:"
   echo "$WORKER_IDS" | while read -r wid; do
@@ -105,7 +151,7 @@ while [ $TIME_PASSED -lt $MAX_WAIT ]; do
 done
 
 if [ $TIME_PASSED -ge $MAX_WAIT ]; then
-  echo "⚠️ Timeout reached (some jobs may still be processing)."
+  echo "⚠ Timeout reached (some jobs may still be processing)."
 fi
 
 # --- METRICS SUMMARY ---
@@ -113,13 +159,12 @@ echo ""
 echo "📊 Queue Metrics Summary:"
 node cli.js metrics
 
-
 # --- SUMMARY ---
 echo ""
 echo "=============================================="
 echo " ✅ QueueCTL test completed successfully!"
 echo " 🌐 Dashboard: http://localhost:5173"
-echo " ⚙️ API:       http://localhost:8080"
+echo " ⚙ API:       http://localhost:8080"
 echo ""
 echo " 🧠 Logs saved at:"
 echo "    • backend.log"
