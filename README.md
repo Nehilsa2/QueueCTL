@@ -30,7 +30,7 @@
 > ```bash
 > node -v
 > ```
-> If you have an older version, update from [nodejs.org](https://nodejs.org/en/download/) before proceeding.
+> If you have an newer version downgrade to 20.x, update from [nodejs.org](https://nodejs.org/en/download/) before proceeding.
 
 
 
